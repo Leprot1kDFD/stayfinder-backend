@@ -2,11 +2,6 @@ require('dotenv').config();
 
 const { Pool } = require('pg');
 
-if (!process.env.DATABASE_URL) {
-    console.error('DATABASE_URL is missing');
-    process.exit(1);
-}
-
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
@@ -19,7 +14,7 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-    console.error('PostgreSQL pool error:', err.message);
+    console.error('PostgreSQL pool error:', err);
 });
 
 module.exports = pool;
