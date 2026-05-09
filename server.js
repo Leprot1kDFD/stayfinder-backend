@@ -169,7 +169,22 @@ app.post('/login', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-
+app.get('/db-test', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT NOW()');
+        res.json({
+            success: true,
+            time: result.rows[0].now
+        });
+    } catch (err) {
+        console.error('DB TEST ERROR:', err);
+        res.status(500).json({
+            success: false,
+            message: err.message,
+            code: err.code
+        });
+    }
+});
 /* HOTELS */
 app.get('/hotels', async (req, res) => {
     try {
