@@ -29,12 +29,10 @@ app.use(cors({
 
 app.use(express.json());
 
-const limiter = rateLimit({
+app.use(rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100
-});
-
-app.use(limiter);
+}));
 
 function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -169,6 +167,75 @@ app.post('/login', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+
+/* AI CHAT */
+app.post('/api/ai-chat', async (req, res) => {
+    const { message } = req.body;
+
+    if (!message || !message.trim()) {
+        return res.status(400).json({ error: 'Message is required' });
+    }
+
+    const text = message.toLowerCase();
+
+    try {
+        const hotelsResult = await pool.query(
+            'SELECT id, name, city, price, description, rooms_total FROM hotels ORDER BY price ASC'
+        );
+
+        const hotels = hotelsResult.rows;
+
+        let reply = '';
+
+        if (text.includes('привет') || text.includes('здравствуй') || text.includes('hello')) {
+            reply = 'Здравствуйте! Я AI-ассистент StayFinder. Я могу помочь подобрать отель, объяснить бронирование, профиль и отзывы.';
+        } else if (text.includes('дешев') || text.includes('бюджет') || text.includes('недорог')) {
+            if (hotels.length === 0) {
+                reply = 'Пока в базе нет отелей.';
+            } else {
+                const cheapHotels = hotels.slice(0, 3);
+                reply = 'Самые недорогие варианты:\n\n' + cheapHotels.map(h =>
+                    `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
+                ).join('\n');
+            }
+        } else if (text.includes('брон') || text.includes('забронировать')) {
+            reply = 'Чтобы забронировать номер: выберите отель на главной странице, нажмите Details, укажите дату заезда и выезда, затем нажмите Book Now. Для бронирования нужно войти в аккаунт.';
+        } else if (text.includes('отзыв') || text.includes('рейтинг')) {
+            reply = 'Отзывы можно оставить на странице конкретного отеля. Откройте отель, выберите оценку от 1 до 5, напишите комментарий и отправьте отзыв.';
+        } else if (text.includes('профиль') || text.includes('мои бронирования')) {
+            reply = 'Ваши бронирования находятся в разделе Profile. Там можно посмотреть список активных бронирований и информацию о пользователе.';
+        } else if (text.includes('город') || text.includes('алматы') || text.includes('астана') || text.includes('шымкент')) {
+            const found = hotels.filter(h => text.includes(String(h.city).toLowerCase()));
+
+            if (found.length > 0) {
+                reply = 'Я нашёл отели по вашему городу:\n\n' + found.map(h =>
+                    `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
+                ).join('\n');
+            } else {
+                reply = 'Напишите город, например: "отели в Алматы" или "отели в Астане", и я подберу варианты из базы.';
+            }
+        } else if (text.includes('отель') || text.includes('hotel')) {
+            if (hotels.length === 0) {
+                reply = 'Пока в базе нет отелей.';
+            } else {
+                const list = hotels.slice(0, 5);
+                reply = 'Вот несколько отелей из базы:\n\n' + list.map(h =>
+                    `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
+                ).join('\n');
+            }
+        } else {
+            reply = 'Я могу помочь подобрать отель, найти дешевые варианты, объяснить бронирование, отзывы и профиль. Например, напишите: "посоветуй дешевый отель" или "как забронировать номер?".';
+        }
+
+        res.json({ reply });
+
+    } catch (err) {
+        console.error('AI chat error:', err);
+        res.status(500).json({ error: 'AI assistant server error' });
+    }
+});
+
+/* DB TEST */
 app.get('/db-test', async (req, res) => {
     try {
         const result = await pool.query('SELECT NOW()');
@@ -185,6 +252,7 @@ app.get('/db-test', async (req, res) => {
         });
     }
 });
+
 /* HOTELS */
 app.get('/hotels', async (req, res) => {
     try {
@@ -488,7 +556,7 @@ app.post('/hotels/:id/reviews', authMiddleware, async (req, res) => {
     }
 });
 
-/* GET ONE HOTEL — всегда ниже /availability и /reviews */
+/* GET ONE HOTEL */
 app.get('/hotels/:id', async (req, res) => {
     try {
         const result = await pool.query(
