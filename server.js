@@ -169,67 +169,6 @@ app.post('/login', async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
-app.post('/api/ai-chat', async (req, res) => {
-    const message = String(req.body.message || '').trim();
-
-    if (!message) {
-        return res.status(400).json({ error: 'Message is required' });
-    }
-
-    try {
-        const hotelsResult = await pool.query(
-            'SELECT id, name, city, price, description, rooms_total FROM hotels ORDER BY price ASC LIMIT 20'
-        );
-
-        const hotels = hotelsResult.rows;
-        const lower = message.toLowerCase();
-
-        let reply = '';
-
-        if (lower.includes('привет') || lower.includes('hello') || lower.includes('hi')) {
-            reply = 'Привет! Я AI-ассистент StayFinder. Могу помочь подобрать отель, объяснить бронирование или подсказать, где посмотреть профиль и отзывы.';
-        } else if (lower.includes('брон') || lower.includes('book')) {
-            reply = 'Чтобы забронировать отель: откройте карточку отеля, нажмите View details / Подробнее, выберите даты заезда и выезда, затем нажмите Book. Если вы не вошли в аккаунт, сайт попросит авторизоваться.';
-        } else if (lower.includes('отзыв') || lower.includes('review')) {
-            reply = 'Отзывы находятся на странице конкретного отеля. Авторизованный пользователь может поставить оценку от 1 до 5 и оставить комментарий.';
-        } else if (lower.includes('профиль') || lower.includes('profile')) {
-            reply = 'Профиль открывается через кнопку Profile. Там можно посмотреть свои бронирования и данные аккаунта.';
-        } else if (lower.includes('деш') || lower.includes('cheap') || lower.includes('бюджет')) {
-            if (hotels.length) {
-                const best = hotels.slice(0, 3).map(h => `${h.name} (${h.city}) — ${h.price} ₸`).join('\n');
-                reply = `Самые бюджетные варианты сейчас:\n${best}\n\nМожете открыть главную страницу и найти их через поиск.`;
-            } else {
-                reply = 'Пока в базе нет отелей, но после добавления я смогу подсказать самые дешевые варианты.';
-            }
-        } else if (lower.includes('город') || lower.includes('city') || lower.includes('алматы') || lower.includes('астана') || lower.includes('орал')) {
-            const found = hotels.filter(h => lower.includes(String(h.city).toLowerCase()));
-
-            if (found.length) {
-                reply = 'Я нашел отели по указанному городу:\n' +
-                    found.slice(0, 5).map(h => `${h.name} — ${h.price} ₸ за ночь`).join('\n');
-            } else {
-                const cities = [...new Set(hotels.map(h => h.city))].filter(Boolean).join(', ');
-                reply = cities
-                    ? `Напишите город точнее. Сейчас на сайте есть города: ${cities}.`
-                    : 'Пока список городов пуст, потому что в базе нет добавленных отелей.';
-            }
-        } else if (lower.includes('посовет') || lower.includes('recommend') || lower.includes('лучший')) {
-            if (hotels.length) {
-                const recommended = hotels.slice(0, 5).map(h => `${h.name} (${h.city}) — ${h.price} ₸`).join('\n');
-                reply = `Могу предложить эти варианты:\n${recommended}\n\nДля точного подбора напишите город и бюджет.`;
-            } else {
-                reply = 'Пока отели не добавлены. Администратор может добавить их через админ-панель.';
-            }
-        } else {
-            reply = 'Я могу помочь с подбором отеля, бронированием, отзывами и профилем. Например, напишите: «Посоветуй дешевый отель» или «Как забронировать номер?»';
-        }
-
-        res.json({ reply });
-    } catch (err) {
-        console.error('AI chat error:', err);
-        res.status(500).json({ error: 'AI assistant is unavailable' });
-    }
-});
 app.get('/db-test', async (req, res) => {
     try {
         const result = await pool.query('SELECT NOW()');
