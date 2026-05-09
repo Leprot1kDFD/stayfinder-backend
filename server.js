@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const fetch = require('node-fetch');
+
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const express = require('express');
@@ -173,68 +175,88 @@ app.post('/api/ai-chat', async (req, res) => {
     const { message } = req.body;
 
     if (!message || !message.trim()) {
-        return res.status(400).json({ error: 'Message is required' });
+        return res.status(400).json({
+            error: 'Message is required'
+        });
     }
-
-    const text = message.toLowerCase();
 
     try {
         const hotelsResult = await pool.query(
-            'SELECT id, name, city, price, description, rooms_total FROM hotels ORDER BY price ASC'
+            `SELECT name, city, price, description
+             FROM hotels
+             ORDER BY price ASC
+             LIMIT 10`
         );
 
-        const hotels = hotelsResult.rows;
+        const hotelsText = hotelsResult.rows.map(h =>
+            `${h.name} в городе ${h.city}, цена ${h.price} ₸. ${h.description || ''}`
+        ).join('\n');
 
-        let reply = '';
+        const aiResponse = await fetch(
+            'https://openrouter.ai/api/v1/chat/completions',
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'openai/gpt-3.5-turbo',
 
-        if (text.includes('привет') || text.includes('здравствуй') || text.includes('hello')) {
-            reply = 'Здравствуйте! Я AI-ассистент StayFinder. Я могу помочь подобрать отель, объяснить бронирование, профиль и отзывы.';
-        } else if (text.includes('дешев') || text.includes('бюджет') || text.includes('недорог')) {
-            if (hotels.length === 0) {
-                reply = 'Пока в базе нет отелей.';
-            } else {
-                const cheapHotels = hotels.slice(0, 3);
-                reply = 'Самые недорогие варианты:\n\n' + cheapHotels.map(h =>
-                    `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
-                ).join('\n');
-            }
-        } else if (text.includes('брон') || text.includes('забронировать')) {
-            reply = 'Чтобы забронировать номер: выберите отель на главной странице, нажмите Details, укажите дату заезда и выезда, затем нажмите Book Now. Для бронирования нужно войти в аккаунт.';
-        } else if (text.includes('отзыв') || text.includes('рейтинг')) {
-            reply = 'Отзывы можно оставить на странице конкретного отеля. Откройте отель, выберите оценку от 1 до 5, напишите комментарий и отправьте отзыв.';
-        } else if (text.includes('профиль') || text.includes('мои бронирования')) {
-            reply = 'Ваши бронирования находятся в разделе Profile. Там можно посмотреть список активных бронирований и информацию о пользователе.';
-        } else if (text.includes('город') || text.includes('алматы') || text.includes('астана') || text.includes('шымкент')) {
-            const found = hotels.filter(h => text.includes(String(h.city).toLowerCase()));
+                    messages: [
+                        {
+                            role: 'system',
+                            content:
+`Ты AI ассистент сайта StayFinder.
 
-            if (found.length > 0) {
-                reply = 'Я нашёл отели по вашему городу:\n\n' + found.map(h =>
-                    `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
-                ).join('\n');
-            } else {
-                reply = 'Напишите город, например: "отели в Алматы" или "отели в Астане", и я подберу варианты из базы.';
+Ты помогаешь пользователям:
+- выбирать отели
+- искать дешевые варианты
+- объяснять бронирование
+- рассказывать про отзывы
+- помогать с профилем
+
+Вот доступные отели из базы:
+
+${hotelsText}
+
+Отвечай дружелюбно, кратко и полезно.
+Если пользователь спрашивает про отели — используй информацию из базы.`
+                        },
+                        {
+                            role: 'user',
+                            content: message
+                        }
+                    ],
+
+                    temperature: 0.7,
+                    max_tokens: 300
+                })
             }
-        } else if (text.includes('отель') || text.includes('hotel')) {
-            if (hotels.length === 0) {
-                reply = 'Пока в базе нет отелей.';
-            } else {
-                const list = hotels.slice(0, 5);
-                reply = 'Вот несколько отелей из базы:\n\n' + list.map(h =>
-                    `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
-                ).join('\n');
-            }
-        } else {
-            reply = 'Я могу помочь подобрать отель, найти дешевые варианты, объяснить бронирование, отзывы и профиль. Например, напишите: "посоветуй дешевый отель" или "как забронировать номер?".';
+        );
+
+        const data = await aiResponse.json();
+
+        if (!data.choices || !data.choices[0]) {
+            console.log(data);
+
+            return res.status(500).json({
+                error: 'AI response error'
+            });
         }
+
+        const reply = data.choices[0].message.content;
 
         res.json({ reply });
 
     } catch (err) {
-        console.error('AI chat error:', err);
-        res.status(500).json({ error: 'AI assistant server error' });
+        console.error('AI CHAT ERROR:', err);
+
+        res.status(500).json({
+            error: 'AI assistant server error'
+        });
     }
 });
-
 /* DB TEST */
 app.get('/db-test', async (req, res) => {
     try {
