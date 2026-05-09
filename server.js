@@ -1,8 +1,5 @@
 require('dotenv').config();
 
-const fetch = (...args) =>
-    import('node-fetch').then(({default: fetch}) => fetch(...args));
-
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const express = require('express');
@@ -10,6 +7,9 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('./db');
+
+const fetch = (...args) =>
+    import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const app = express();
 
@@ -64,6 +64,58 @@ function adminMiddleware(req, res, next) {
     }
 
     next();
+}
+
+function makeFallbackReply(message, hotels) {
+    const text = message.toLowerCase();
+
+    if (text.includes('привет') || text.includes('здравствуй') || text.includes('hello')) {
+        return 'Здравствуйте! Я AI-ассистент StayFinder. Я помогу подобрать отель, объяснить бронирование, отзывы и работу профиля.';
+    }
+
+    if (text.includes('дешев') || text.includes('бюджет') || text.includes('недорог')) {
+        if (!hotels.length) {
+            return 'Пока в базе нет отелей.';
+        }
+
+        return 'Самые недорогие варианты:\n\n' + hotels.slice(0, 3).map(h =>
+            `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
+        ).join('\n');
+    }
+
+    if (text.includes('брон') || text.includes('забронировать')) {
+        return 'Чтобы забронировать номер: выберите отель на главной странице, нажмите Details, укажите даты заезда и выезда, затем нажмите Book Now. Для бронирования нужно войти в аккаунт.';
+    }
+
+    if (text.includes('отзыв') || text.includes('рейтинг')) {
+        return 'Отзывы можно оставить на странице конкретного отеля. Откройте отель, выберите оценку от 1 до 5, напишите комментарий и отправьте отзыв.';
+    }
+
+    if (text.includes('профиль') || text.includes('мои бронирования')) {
+        return 'Ваши бронирования находятся в разделе Profile. Там можно посмотреть активные бронирования и информацию о пользователе.';
+    }
+
+    const cityHotel = hotels.find(h => text.includes(String(h.city).toLowerCase()));
+
+    if (cityHotel) {
+        const found = hotels.filter(h => text.includes(String(h.city).toLowerCase()));
+
+        return 'Я нашёл отели по вашему городу:\n\n' + found.map(h =>
+            `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
+        ).join('\n');
+    }
+
+    if (text.includes('отель') || text.includes('hotel')) {
+        if (!hotels.length) {
+            return 'Пока в базе нет отелей.';
+        }
+
+        return 'Вот несколько отелей из базы:\n\n' + hotels.slice(0, 5).map(h =>
+            `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
+        ).join('\n');
+    }
+
+    return 'Я могу помочь подобрать отель, найти дешевые варианты, объяснить бронирование, отзывы и профиль. Например, напишите: "посоветуй дешевый отель" или "как забронировать номер?".';
 }
 
 app.get('/', (req, res) => {
@@ -171,86 +223,109 @@ app.post('/login', async (req, res) => {
     }
 });
 
-/* AI CHAT */
+/* AI CHAT WITH GEMINI + FALLBACK */
 app.post('/api/ai-chat', async (req, res) => {
     const { message } = req.body;
 
     if (!message || !message.trim()) {
-        return res.status(400).json({
-            error: 'Message is required'
-        });
+        return res.status(400).json({ error: 'Message is required' });
     }
 
     try {
         const hotelsResult = await pool.query(
-            `SELECT name, city, price, description
+            `SELECT id, name, city, price, description, rooms_total
              FROM hotels
              ORDER BY price ASC
              LIMIT 10`
         );
 
-        const hotelsText = hotelsResult.rows.map(h =>
-            `${h.name} в городе ${h.city}, цена ${h.price} ₸. ${h.description || ''}`
+        const hotels = hotelsResult.rows;
+
+        const hotelsText = hotels.map(h =>
+            `${h.name} — город ${h.city}, цена ${h.price} ₸ за ночь. ${h.description || ''}`
         ).join('\n');
 
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    contents: [
-                        {
-                            parts: [
-                                {
-                                    text:
-`Ты AI ассистент сайта StayFinder.
-
-Помогай пользователям:
-- выбирать отели
-- искать дешевые варианты
-- рассказывать о бронировании
-- помогать с отзывами
-
-Вот доступные отели:
-
-${hotelsText}
-
-Сообщение пользователя:
-${message}`
-                                }
-                            ]
-                        }
-                    ]
-                })
-            }
-        );
-
-        const data = await response.json();
-
-        const reply =
-            data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (!reply) {
-            console.log(data);
-
-            return res.status(500).json({
-                error: 'Gemini response error'
+        if (!process.env.GEMINI_API_KEY) {
+            return res.json({
+                reply: makeFallbackReply(message, hotels)
             });
         }
 
-        res.json({ reply });
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        contents: [
+                            {
+                                parts: [
+                                    {
+                                        text:
+`Ты AI-ассистент сайта StayFinder.
+
+Ты помогаешь пользователям:
+- выбирать отели;
+- искать дешевые варианты;
+- объяснять бронирование;
+- рассказывать про отзывы;
+- помогать с профилем.
+
+Вот отели из базы данных сайта:
+${hotelsText || 'Пока отелей в базе нет.'}
+
+Отвечай на русском языке, дружелюбно, кратко и полезно.
+Если пользователь спрашивает про отели, используй данные из базы.
+Если данных не хватает, честно скажи, что информации нет.
+
+Сообщение пользователя:
+${message}`
+                                    }
+                                ]
+                            }
+                        ],
+                        generationConfig: {
+                            temperature: 0.7,
+                            maxOutputTokens: 350
+                        }
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (!response.ok || !reply) {
+                console.log('GEMINI FALLBACK:', data);
+
+                return res.json({
+                    reply: makeFallbackReply(message, hotels)
+                });
+            }
+
+            return res.json({ reply });
+
+        } catch (aiErr) {
+            console.error('GEMINI ERROR:', aiErr);
+
+            return res.json({
+                reply: makeFallbackReply(message, hotels)
+            });
+        }
 
     } catch (err) {
-        console.error('GEMINI ERROR:', err);
+        console.error('AI CHAT DB ERROR:', err);
 
-        res.status(500).json({
-            error: 'AI assistant server error'
+        res.json({
+            reply: 'Сейчас ассистент временно не может получить данные из базы, но я могу подсказать: выберите отель на главной странице, откройте Details и оформите бронирование через Book Now.'
         });
     }
 });
+
 /* DB TEST */
 app.get('/db-test', async (req, res) => {
     try {
@@ -307,6 +382,7 @@ app.post('/hotels', authMiddleware, adminMiddleware, async (req, res) => {
         );
 
         res.status(201).json(result.rows[0]);
+
     } catch (err) {
         console.error('Create hotel error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -325,6 +401,7 @@ app.delete('/hotels/:id', authMiddleware, adminMiddleware, async (req, res) => {
         }
 
         res.json({ message: 'Hotel deleted' });
+
     } catch (err) {
         console.error('Delete hotel error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -357,7 +434,7 @@ app.post('/bookings', authMiddleware, async (req, res) => {
         const roomsTotal = Number(hotel.rooms_total) || 1;
 
         const overlapResult = await pool.query(
-            `SELECT COUNT(*) 
+            `SELECT COUNT(*)
              FROM bookings
              WHERE hotel_id = $1
              AND check_in < $3
@@ -391,7 +468,7 @@ app.post('/bookings', authMiddleware, async (req, res) => {
 app.get('/my-bookings', authMiddleware, async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT 
+            `SELECT
                 bookings.id,
                 hotels.name AS hotel_name,
                 hotels.city,
@@ -408,6 +485,7 @@ app.get('/my-bookings', authMiddleware, async (req, res) => {
         );
 
         res.json(result.rows);
+
     } catch (err) {
         console.error('My bookings error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -428,6 +506,7 @@ app.delete('/bookings/:id', authMiddleware, async (req, res) => {
         }
 
         res.json({ message: 'Бронирование удалено' });
+
     } catch (err) {
         console.error('Delete booking error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -438,7 +517,7 @@ app.delete('/bookings/:id', authMiddleware, async (req, res) => {
 app.get('/admin/bookings', authMiddleware, adminMiddleware, async (req, res) => {
     try {
         const result = await pool.query(
-            `SELECT 
+            `SELECT
                 bookings.id,
                 users.username,
                 users.email,
@@ -454,6 +533,7 @@ app.get('/admin/bookings', authMiddleware, adminMiddleware, async (req, res) => 
         );
 
         res.json(result.rows);
+
     } catch (err) {
         console.error('Admin bookings error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -472,6 +552,7 @@ app.delete('/admin/bookings/:id', authMiddleware, adminMiddleware, async (req, r
         }
 
         res.json({ message: 'Booking cancelled' });
+
     } catch (err) {
         console.error('Cancel booking error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -490,6 +571,7 @@ app.get('/hotels/:id/availability', async (req, res) => {
         );
 
         res.json(result.rows);
+
     } catch (err) {
         console.error('Availability error:', err);
         res.status(500).json({ error: 'Server error' });
@@ -500,7 +582,7 @@ app.get('/hotels/:id/availability', async (req, res) => {
 app.get('/hotels/:id/reviews', async (req, res) => {
     try {
         const reviewsResult = await pool.query(
-            `SELECT 
+            `SELECT
                 reviews.id,
                 reviews.rating,
                 reviews.comment,
@@ -514,7 +596,7 @@ app.get('/hotels/:id/reviews', async (req, res) => {
         );
 
         const avgResult = await pool.query(
-            `SELECT 
+            `SELECT
                 COALESCE(ROUND(AVG(rating)::numeric, 1), 0) AS average_rating,
                 COUNT(*) AS total_reviews
              FROM reviews
@@ -556,7 +638,7 @@ app.post('/hotels/:id/reviews', authMiddleware, async (req, res) => {
             `INSERT INTO reviews (user_id, hotel_id, rating, comment)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (user_id, hotel_id)
-             DO UPDATE SET 
+             DO UPDATE SET
                 rating = EXCLUDED.rating,
                 comment = EXCLUDED.comment,
                 created_at = CURRENT_TIMESTAMP
@@ -585,6 +667,7 @@ app.get('/hotels/:id', async (req, res) => {
         }
 
         res.json(result.rows[0]);
+
     } catch (err) {
         console.error('Get hotel error:', err);
         res.status(500).json({ error: 'Server error' });
