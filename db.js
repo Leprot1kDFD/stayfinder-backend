@@ -7,12 +7,14 @@ if (!process.env.DATABASE_URL) {
     process.exit(1);
 }
 
+const isRender = process.env.RENDER === 'true';
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    },
-    connectionTimeoutMillis: 10000
+    ssl: isRender ? false : { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    max: 5
 });
 
 pool.on('connect', () => {
