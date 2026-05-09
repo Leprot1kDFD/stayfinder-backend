@@ -1,6 +1,7 @@
 require('dotenv').config();
 
-const fetch = require('node-fetch');
+const fetch = (...args) =>
+    import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
