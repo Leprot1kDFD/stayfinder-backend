@@ -2,8 +2,10 @@ require('dotenv').config();
 
 const { Pool } = require('pg');
 
-console.log("DATABASE_URL exists:", !!process.env.DATABASE_URL);
-console.log("DB_HOST exists:", process.env.DB_HOST || "no DB_HOST");
+if (!process.env.DATABASE_URL) {
+    console.error('DATABASE_URL is missing');
+    process.exit(1);
+}
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
