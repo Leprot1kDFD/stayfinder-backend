@@ -193,65 +193,58 @@ app.post('/api/ai-chat', async (req, res) => {
             `${h.name} в городе ${h.city}, цена ${h.price} ₸. ${h.description || ''}`
         ).join('\n');
 
-        const aiResponse = await fetch(
-            'https://openrouter.ai/api/v1/chat/completions',
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
             {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'openai/gpt-3.5-turbo',
-
-                    messages: [
+                    contents: [
                         {
-                            role: 'system',
-                            content:
+                            parts: [
+                                {
+                                    text:
 `Ты AI ассистент сайта StayFinder.
 
-Ты помогаешь пользователям:
+Помогай пользователям:
 - выбирать отели
 - искать дешевые варианты
-- объяснять бронирование
-- рассказывать про отзывы
-- помогать с профилем
+- рассказывать о бронировании
+- помогать с отзывами
 
-Вот доступные отели из базы:
+Вот доступные отели:
 
 ${hotelsText}
 
-Отвечай дружелюбно, кратко и полезно.
-Если пользователь спрашивает про отели — используй информацию из базы.`
-                        },
-                        {
-                            role: 'user',
-                            content: message
+Сообщение пользователя:
+${message}`
+                                }
+                            ]
                         }
-                    ],
-
-                    temperature: 0.7,
-                    max_tokens: 300
+                    ]
                 })
             }
         );
 
-        const data = await aiResponse.json();
+        const data = await response.json();
 
-        if (!data.choices || !data.choices[0]) {
+        const reply =
+            data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!reply) {
             console.log(data);
 
             return res.status(500).json({
-                error: 'AI response error'
+                error: 'Gemini response error'
             });
         }
-
-        const reply = data.choices[0].message.content;
 
         res.json({ reply });
 
     } catch (err) {
-        console.error('AI CHAT ERROR:', err);
+        console.error('GEMINI ERROR:', err);
 
         res.status(500).json({
             error: 'AI assistant server error'
