@@ -69,53 +69,73 @@ function adminMiddleware(req, res, next) {
 function makeFallbackReply(message, hotels) {
     const text = message.toLowerCase();
 
-    if (text.includes('привет') || text.includes('здравствуй') || text.includes('hello')) {
-        return 'Здравствуйте! Я AI-ассистент StayFinder. Я помогу подобрать отель, объяснить бронирование, отзывы и работу профиля.';
+    if (
+        text.includes('привет') ||
+        text.includes('здравствуй') ||
+        text.includes('hello')
+    ) {
+        return 'Здравствуйте! Я AI-гид MuseumNavigator. Я помогу найти экспонаты, разделы музея и построить маршрут посещения.';
     }
 
-    if (text.includes('дешев') || text.includes('бюджет') || text.includes('недорог')) {
-        if (!hotels.length) {
-            return 'Пока в базе нет отелей.';
-        }
-
-        return 'Самые недорогие варианты:\n\n' + hotels.slice(0, 3).map(h =>
-            `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
-        ).join('\n');
+    if (
+        text.includes('динозавр') ||
+        text.includes('палеонтолог')
+    ) {
+        return 'В музее представлены палеонтологические экспозиции, включая древние окаменелости, скелеты динозавров и археологические находки.';
     }
 
-    if (text.includes('брон') || text.includes('забронировать')) {
-        return 'Чтобы забронировать номер: выберите отель на главной странице, нажмите Details, укажите даты заезда и выезда, затем нажмите Book Now. Для бронирования нужно войти в аккаунт.';
+    if (
+        text.includes('маршрут') ||
+        text.includes('добавить')
+    ) {
+        return 'Чтобы добавить экспонат в маршрут: откройте страницу экспоната, выберите даты посещения и нажмите кнопку "Добавить в маршрут".';
     }
 
-    if (text.includes('отзыв') || text.includes('рейтинг')) {
-        return 'Отзывы можно оставить на странице конкретного отеля. Откройте отель, выберите оценку от 1 до 5, напишите комментарий и отправьте отзыв.';
+    if (
+        text.includes('отзыв') ||
+        text.includes('рейтинг')
+    ) {
+        return 'Отзывы посетителей находятся на странице каждого экспоната. Вы можете поставить оценку и написать комментарий.';
     }
 
-    if (text.includes('профиль') || text.includes('мои бронирования')) {
-        return 'Ваши бронирования находятся в разделе Profile. Там можно посмотреть активные бронирования и информацию о пользователе.';
+    if (
+        text.includes('профиль') ||
+        text.includes('мой маршрут')
+    ) {
+        return 'Ваш маршрут находится в разделе Profile. Там отображаются все выбранные экспозиции и экспонаты.';
     }
 
-    const cityHotel = hotels.find(h => text.includes(String(h.city).toLowerCase()));
+    const cityHotel = hotels.find(h =>
+        text.includes(String(h.city).toLowerCase())
+    );
 
     if (cityHotel) {
-        const found = hotels.filter(h => text.includes(String(h.city).toLowerCase()));
+        const found = hotels.filter(h =>
+            text.includes(String(h.city).toLowerCase())
+        );
 
-        return 'Я нашёл отели по вашему городу:\n\n' + found.map(h =>
-            `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
-        ).join('\n');
+        return 'Я нашёл экспозиции по вашему запросу:\n\n' +
+            found.map(h =>
+                `• ${h.name} — ${h.city}, стенд №${h.price}`
+            ).join('\n');
     }
 
-    if (text.includes('отель') || text.includes('hotel')) {
+    if (
+        text.includes('экспонат') ||
+        text.includes('музей') ||
+        text.includes('зал')
+    ) {
         if (!hotels.length) {
-            return 'Пока в базе нет отелей.';
+            return 'Экспозиции пока отсутствуют в базе.';
         }
 
-        return 'Вот несколько отелей из базы:\n\n' + hotels.slice(0, 5).map(h =>
-            `• ${h.name} — ${h.city}, ${h.price} ₸ за ночь`
-        ).join('\n');
+        return 'Вот некоторые экспозиции музея:\n\n' +
+            hotels.slice(0, 5).map(h =>
+                `• ${h.name} — ${h.city}, стенд №${h.price}`
+            ).join('\n');
     }
 
-    return 'Я могу помочь подобрать отель, найти дешевые варианты, объяснить бронирование, отзывы и профиль. Например, напишите: "посоветуй дешевый отель" или "как забронировать номер?".';
+    return 'Я могу помочь найти экспонаты, рассказать о разделах музея, объяснить маршрут посещения и отзывы посетителей.';
 }
 
 app.get('/', (req, res) => {
